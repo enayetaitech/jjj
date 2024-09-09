@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Animated Slideshow</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      #slideshow-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+      .slide {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        display: none;
+      }
+      .slide img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      #subtitleContainer {
+        position: absolute;
+        bottom: 50px;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        z-index: 10;
+        color: black;
+        background-color: yellow;
+        padding: 10px 20px;
+        border-radius: 20px;
+        font-size: 24px;
+        font-weight: bold;
+        max-width: 80%;
+      }
+      .timer {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        color: white;
+        font-size: 18px;
+        background-color: rgba(0, 0, 0, 0.5);
+        padding: 5px 10px;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="slideshow-container">
+      <div id="subtitleContainer"></div>
+    </div>
+
+    <script>
+      let slideshowData = {};
+
+      function createSlideElement(slide) {
+        const slideDiv = document.createElement("div");
+        slideDiv.className = "slide";
+
+        const img = document.createElement("img");
+        img.src = slide.image_path;
+        img.alt = "Slide image";
+
+        const timerDiv = document.createElement("div");
+        timerDiv.className = "timer";
+
+        slideDiv.appendChild(img);
+        slideDiv.appendChild(timerDiv);
+
+        return slideDiv;
+      }
+
+      function parseTime(timeStr) {
+        const [, min, sec, ms] = timeStr.match(/(\d{2}):(\d{2}),(\d{3})/);
+        return parseInt(min) * 60 + parseInt(sec) + parseInt(ms) / 1000;
+      }
+
+      function showSlide(slideElement, slide, subtitles, duration) {
+        slideElement.style.display = "block";
+        const timerDiv = slideElement.querySelector(".timer");
+        const container = document.getElementById("subtitleContainer");
+
+        // Apply srtCss to subtitleContainer
+        Object.assign(container.style, slideshowData.srtCss);
+
+        let startTime = performance.now();
+        let remainingTime = Math.ceil(duration);
+        let lastSubtitle = null;
+
+        function updateSubtitle() {
+          const currentTime =
+            (performance.now() - startTime) / 1000 + parseTime(slide.start);
+          const currentSubtitle = subtitles.find(
+            (s) =>
+              currentTime >= parseTime(s.start) &&
+              currentTime < parseTime(s.end)
+          );
+
+          if (currentSubtitle) {
+            container.textContent = currentSubtitle.text.trim();
+            lastSubtitle = currentSubtitle;
+          } else if (
+            lastSubtitle &&
+            currentTime < parseTime(lastSubtitle.end)
+          ) {
+            container.textContent = lastSubtitle.text.trim();
+          } else {
+            container.textContent = "";
+          }
+
+          if ((performance.now() - startTime) / 1000 < duration) {
+            requestAnimationFrame(updateSubtitle);
+          }
+        }
+
+        const timerInterval = setInterval(() => {
+          timerDiv.textContent = `${remainingTime}s`;
+          remainingTime--;
+          if (remainingTime < 0) {
+            clearInterval(timerInterval);
+          }
+        }, 1000);
+
+        updateSubtitle();
+
+        setTimeout(() => {
+          slideElement.style.display = "none";
+          clearInterval(timerInterval);
+          container.textContent = "";
+        }, duration * 1000);
+      }
+
+      function startSlideshow() {
+        fetch("https://automovies.click/config")
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("Network response was not ok");
+            }
+            return response.json();
+          })
+          .then((data) => {
+            slideshowData = data;
+
+            const container = document.getElementById("slideshow-container");
+            let totalDuration = 0;
+
+            slideshowData.imageConfig.forEach((slide, index) => {
+              const slideElement = createSlideElement(slide);
+              container.appendChild(slideElement);
+
+              const slideSubtitles = slideshowData.srtjson.filter(
+                (sub) =>
+                  parseTime(sub.end) > parseTime(slide.start) &&
+                  parseTime(sub.start) < parseTime(slide.end)
+              );
+              const duration = parseTime(slide.end) - parseTime(slide.start);
+
+              setTimeout(() => {
+                showSlide(slideElement, slide, slideSubtitles, duration);
+              }, totalDuration * 1000);
+
+              totalDuration += duration;
+            });
+
+            setTimeout(startSlideshow, totalDuration * 1000);
+          })
+          .catch((error) => {
+            console.error("Error fetching configuration:", error);
+            document.getElementById("configData").textContent =
+              "Failed to load configuration.";
+          });
+      }
+
+      window.onload = startSlideshow;
+    </script>
+  </body>
+</html>
